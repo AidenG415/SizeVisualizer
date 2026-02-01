@@ -268,7 +268,7 @@
     </div>
   </div>
 
-  <script>
+ <script>
   // ====== CONFIG ======
   const ACRES_PER_SQMI = 640;
 
@@ -289,59 +289,60 @@
 
   // ====== ELEMENTS ======
   const els = {
-    acres: document.getElementById('acres'),
-    mode: document.getElementById('mode'),
-    pct: document.getElementById('pct'),
-    sqmi: document.getElementById('sqmi'),
-    warn: document.getElementById('warn'),
-    exampleBtn: document.getElementById('exampleBtn'),
+    acres: document.getElementById("acres"),
+    mode: document.getElementById("mode"),
+    pct: document.getElementById("pct"),
+    sqmi: document.getElementById("sqmi"),
+    warn: document.getElementById("warn"),
+    exampleBtn: document.getElementById("exampleBtn"),
 
-    silhouetteGroup: document.getElementById('silhouetteGroup'),
-    clipGroup: document.getElementById('clipGroup'),
-    fillRect: document.getElementById('fillRect'),
-    titleText: document.getElementById('titleText'),
+    silhouetteGroup: document.getElementById("silhouetteGroup"),
+    fillRect: document.getElementById("fillRect"),
+    titleText: document.getElementById("titleText"),
 
-    clipUSGroup: document.getElementById('clipUSGroup'),
-    clipWorldGroup: document.getElementById('clipWorldGroup'),
+    // ✅ these MUST exist in your SVG (you already have them)
+    maskUSGroup: document.getElementById("maskUSGroup"),
+    maskWorldGroup: document.getElementById("maskWorldGroup"),
 
-    zoomWrap: document.getElementById('zoomWrap'),
-    zoomBar: document.getElementById('zoomBar'),
-    zoomFactorText: document.getElementById('zoomFactorText'),
-    zoomNote: document.getElementById('zoomNote'),
+    zoomWrap: document.getElementById("zoomWrap"),
+    zoomBar: document.getElementById("zoomBar"),
+    zoomFactorText: document.getElementById("zoomFactorText"),
+    zoomNote: document.getElementById("zoomNote"),
   };
 
   let currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
 
   // ====== HELPERS ======
-  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
-  function formatNumber(n){
+  function formatNumber(n) {
     if (!isFinite(n)) return "—";
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
-  function clearChildren(el){
+  function clearChildren(el) {
+    if (!el) return;
     while (el.firstChild) el.removeChild(el.firstChild);
   }
 
-  function pickShapeNodes(svgDoc){
-    // Keep it simple & reliable: only real geometry.
-    // (Ignore defs/text/etc)
+  function pickShapeNodes(svgDoc) {
+    // SimpleMaps uses paths/polys; keep only real geometry
     return svgDoc.querySelectorAll("path, polygon, polyline");
   }
 
-  function cloneShapesIntoGroup(svgDoc, targetGroup){
+  function cloneShapesIntoGroup(svgDoc, targetGroup) {
+    if (!targetGroup) throw new Error("Target group missing in page SVG.");
     clearChildren(targetGroup);
 
     const shapes = pickShapeNodes(svgDoc);
     shapes.forEach(node => {
       const clone = document.importNode(node, true);
 
-      // Nuke anything that can break filling/clipping
+      // remove paint that can force fill:none
       clone.removeAttribute("class");
+      clone.removeAttribute("style");
       clone.removeAttribute("fill");
       clone.removeAttribute("stroke");
-      clone.removeAttribute("style");
 
       targetGroup.appendChild(clone);
     });
@@ -351,26 +352,25 @@
     }
   }
 
-  function forceClipPaint(groupEl){
-    // Clip paths need filled area. Force every shape to fill white, no stroke.
-    const all = groupEl.querySelectorAll("path, polygon, polyline");
+  function forceMaskPaint(maskGroup) {
+    // Masks need white filled shapes to define visible area
+    const all = maskGroup.querySelectorAll("path, polygon, polyline");
     all.forEach(el => {
       el.setAttribute("fill", "#fff");
       el.setAttribute("stroke", "none");
-      el.removeAttribute("style"); // in case style="fill:none" existed in the SVG
+      el.removeAttribute("style");
     });
+    maskGroup.setAttribute("fill", "#fff");
   }
 
-  function forceSilhouettePaint(groupEl){
+  function forceSilhouettePaint(groupEl) {
     const all = groupEl.querySelectorAll("path, polygon, polyline");
     all.forEach(el => {
-      // allow group styling to apply cleanly
       el.removeAttribute("style");
       el.removeAttribute("fill");
       el.removeAttribute("stroke");
     });
 
-    // Apply your base style on the group
     groupEl.setAttribute("fill", "rgba(232,236,255,.12)");
     groupEl.setAttribute("stroke", "rgba(232,236,255,.35)");
     groupEl.setAttribute("stroke-width", "1.5");
@@ -378,12 +378,11 @@
     groupEl.setAttribute("stroke-linecap", "round");
   }
 
-  async function fitTransformForGroupAsync(groupEl, box){
+  async function fitTransformForGroupAsync(groupEl, box) {
     await new Promise(requestAnimationFrame);
 
     const bbox = groupEl.getBBox();
     if (!bbox.width || !bbox.height) {
-      // avoid NaN transforms
       return `translate(${box.x}, ${box.y}) scale(1)`;
     }
 
@@ -398,11 +397,14 @@
     return `translate(${tx}, ${ty}) scale(${scale})`;
   }
 
-  async function loadMap(mode){
+  async function loadMap(mode) {
     const url = MAP_FILES[mode];
     const isWorld = mode === "world";
 
     els.titleText.textContent = isWorld ? "World (land area)" : "United States (land area)";
+
+    // ✅ switch mask on the fillRect
+    els.fillRect.setAttribute("mask", isWorld ? "url(#maskWorld)" : "url(#maskUS)");
 
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error(`Failed to load ${url} (HTTP ${res.status})`);
@@ -410,40 +412,32 @@
     const text = (await res.text()).trim();
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
 
-    // IMPORTANT: SimpleMaps often has root style="...fill:none..." which can poison descendants.
-    // Removing it in the parsed doc helps, but we also wipe styles on every cloned shape above.
+    // Remove poisonous root style like: fill:none;
     const root = doc.querySelector("svg");
     if (root) root.removeAttribute("style");
 
-    // Import silhouette
+    // silhouette
     cloneShapesIntoGroup(doc, els.silhouetteGroup);
-
-    // Import clip shapes into the active clip group
-    if (isWorld) {
-      cloneShapesIntoGroup(doc, els.clipWorldGroup);
-      clearChildren(els.clipUSGroup);
-      els.clipGroup.setAttribute("clip-path", "url(#clipWorld)");
-    } else {
-      cloneShapesIntoGroup(doc, els.clipUSGroup);
-      clearChildren(els.clipWorldGroup);
-      els.clipGroup.setAttribute("clip-path", "url(#clipUS)");
-    }
-
-    // FORCE paint rules
     forceSilhouettePaint(els.silhouetteGroup);
 
-    const activeClipGroup = isWorld ? els.clipWorldGroup : els.clipUSGroup;
-    forceClipPaint(activeClipGroup);
+    // mask shapes
+    const activeMaskGroup = isWorld ? els.maskWorldGroup : els.maskUSGroup;
+    const otherMaskGroup  = isWorld ? els.maskUSGroup : els.maskWorldGroup;
 
-    // Fit + apply identical transform to clip group
+    cloneShapesIntoGroup(doc, activeMaskGroup);
+    clearChildren(otherMaskGroup);
+
+    forceMaskPaint(activeMaskGroup);
+
+    // Fit transform (apply to BOTH)
     const transformStr = await fitTransformForGroupAsync(els.silhouetteGroup, MAP_BOX);
     els.silhouetteGroup.setAttribute("transform", transformStr);
-    activeClipGroup.setAttribute("transform", transformStr);
+    activeMaskGroup.setAttribute("transform", transformStr);
 
     currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
   }
 
-  function update(){
+  function update() {
     const mode = els.mode.value;
     let acres = Number(els.acres.value);
     if (!isFinite(acres) || acres < 0) acres = 0;
@@ -488,7 +482,7 @@
     }
   }
 
-  async function init(){
+  async function init() {
     await loadMap(els.mode.value);
     update();
 
