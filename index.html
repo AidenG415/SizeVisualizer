@@ -353,7 +353,7 @@
       el.removeAttribute("fill");
       const style = el.getAttribute("style") || "";
       if (style) {
-        const cleaned = style.replace(/fill\s*:\s*[^;]+;?/gi, "");
+        const cleaned = style.replace(/(?:^|;)\s*fill\s*:\s*[^;]+/gi, "");
         if (cleaned !== style) el.setAttribute("style", cleaned);
       }
     });
@@ -397,6 +397,11 @@
 
     const text = (await res.text()).trim();
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+
+    // STEP 1: remove root SVG fill:none that breaks coloring
+    const svgRoot = doc.querySelector("svg");
+    if (svgRoot) svgRoot.removeAttribute("style");
+
 
     // Import shapes into silhouette + clip
     cloneShapesIntoGroup(doc, els.silhouetteGroup);
