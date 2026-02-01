@@ -427,10 +427,15 @@ async function loadMap(region){
   els.fillRect.setAttribute("mask","url(#maskUS)");
 
   areaModel = await buildAreaModel(els.maskUSGroup);
-  els.titleText.textContent = region === "us"
-    ? "United States (land area)"
-    : region === "world" ? "World (land area)"
-    : region.charAt(0).toUpperCase()+region.slice(1);
+  const REGION_LABELS = {
+  us: "United States (land area)",
+  world: "World (land area)",
+  california: "California",
+  ri: "Rhode Island"
+};
+
+els.titleText.textContent = REGION_LABELS[region] || region;
+
 }
 
 /* ================= UPDATE ================= */
