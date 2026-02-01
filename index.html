@@ -330,24 +330,82 @@
       while (el.firstChild) el.removeChild(el.firstChild);
     }
 
-    function svgPathEl(d){
-      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      p.setAttribute("d", d);
-      return p;
+   
+
+       // ====== HELPERS ======
+    function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+    function formatNumber(n){
+      if (!isFinite(n)) return "—";
+      return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
-    function extractPathDs(svgDoc){
-      // Supports typical map SVGs comprised of <path>.
-      // If your SVG uses polygons/rects, tell me and I’ll extend this.
-      return Array.from(svgDoc.querySelectorAll("path"))
-        .map(p => p.getAttribute("d"))
-        .filter(Boolean);
+    function clearChildren(el){
+      while (el.firstChild) el.removeChild(el.firstChild);
     }
 
-    function setPaths(groupEl, pathsD){
-      clearChildren(groupEl);
-      for (const d of pathsD) groupEl.appendChild(svgPathEl(d));
+    // Clone SVG shape elements from an external SVG doc into a target <g>
+    function cloneShapesIntoGroup(svgDoc, targetGroup){
+      clearChildren(targetGroup);
+
+      // Grab common geometry elements (SimpleMaps uses <path> a lot)
+      const shapes = svgDoc.querySelectorAll("path, polygon, polyline, rect, circle, ellipse");
+
+      shapes.forEach(node => {
+        // Import node into THIS document so it becomes part of your page SVG
+        const clone = document.importNode(node, true);
+        targetGroup.appendChild(clone);
+      });
     }
+
+    // Strip any inline fill rules so group-level fill / CSS can work
+    function stripInlineFills(groupEl){
+      const all = groupEl.querySelectorAll("*");
+      all.forEach(el => {
+        // Remove fill="..."
+        el.removeAttribute("fill");
+
+        // Remove style="...fill: ...;..."
+        const style = el.getAttribute("style") || "";
+        if (style) {
+          const cleaned = style.replace(/fill\s*:\s*[^;]+;?/gi, "");
+          if (cleaned !== style) el.setAttribute("style", cleaned);
+        }
+      });
+
+      // Also remove fill rules directly on the group (in case)
+      groupEl.removeAttribute("fill");
+      const gStyle = groupEl.getAttribute("style") || "";
+      if (gStyle) {
+        const cleaned = gStyle.replace(/fill\s*:\s*[^;]+;?/gi, "");
+        if (cleaned !== gStyle) groupEl.setAttribute("style", cleaned);
+      }
+    }
+
+    // Some browsers can give 0x0 bbox immediately after DOM changes.
+    // This waits a frame before measuring.
+    async function fitTransformForGroupAsync(groupEl, box){
+      await new Promise(requestAnimationFrame);
+      const bbox = groupEl.getBBox();
+
+      // Guard: avoid divide-by-zero
+      if (!bbox.width || !bbox.height) {
+        return `translate(${box.x}, ${box.y}) scale(1)`;
+      }
+
+      const scaleX = box.w / bbox.width;
+      const scaleY = box.h / bbox.height;
+      const scale = Math.min(scaleX, scaleY);
+
+      const newW = bbox.width * scale;
+      const newH = bbox.height * scale;
+
+      const tx = box.x + (box.w - newW)/2 - bbox.x * scale;
+      const ty = box.y + (box.h - newH)/2 - bbox.y * scale;
+
+      return `translate(${tx}, ${ty}) scale(${scale})`;
+    }
+
 
     function fitTransformForGroup(groupEl, box){
       // group must be in DOM
@@ -380,7 +438,7 @@
       });
     }
 
-    async function loadMap(mode){
+       async function loadMap(mode){
       const url = MAP_FILES[mode];
       const isWorld = mode === "world";
 
@@ -392,33 +450,43 @@
       const text = (await res.text()).trim();
       const doc = new DOMParser().parseFromString(text, "image/svg+xml");
 
-      const pathsD = extractPathDs(doc);
-      if (!pathsD.length) throw new Error(`No <path> elements found in ${url}. Use an SVG that contains paths.`);
+      // 1) Import shapes into silhouette (real nodes, preserves transforms if present)
+      cloneShapesIntoGroup(doc, els.silhouetteGroup);
 
-      // Populate silhouette paths
-      setPaths(els.silhouetteGroup, pathsD);
-
-      // ✅ FIX B: remove per-path fills so the group fill + clip highlight actually render
-      stripInlineFills(els.silhouetteGroup);
-
-      // Populate BOTH clip groups (keeps switching instant later)
-      // (You can optimize to only set the active one, but this is fine.)
+      // 2) Import shapes into the matching clip group
       if (isWorld) {
-        setPaths(els.clipWorldGroup, pathsD);
-        // ✅ FIX B: strip inline fills in clip paths too (some SVGs include style fills)
-        stripInlineFills(els.clipWorldGroup);
-
-        // Clear other clip group so it doesn't hang onto old shapes
+        cloneShapesIntoGroup(doc, els.clipWorldGroup);
         clearChildren(els.clipUSGroup);
         els.clipGroup.setAttribute("clip-path", "url(#clipWorld)");
       } else {
-        setPaths(els.clipUSGroup, pathsD);
-        // ✅ FIX B: strip inline fills in clip paths too
-        stripInlineFills(els.clipUSGroup);
-
+        cloneShapesIntoGroup(doc, els.clipUSGroup);
         clearChildren(els.clipWorldGroup);
         els.clipGroup.setAttribute("clip-path", "url(#clipUS)");
       }
+
+      // 3) CRITICAL: remove inline fill rules from imported nodes
+      stripInlineFills(els.silhouetteGroup);
+      if (isWorld) stripInlineFills(els.clipWorldGroup);
+      else stripInlineFills(els.clipUSGroup);
+
+      // 4) Apply your desired base style on the silhouette group (now it will actually take)
+      els.silhouetteGroup.setAttribute("fill", "rgba(232,236,255,.12)");
+      els.silhouetteGroup.setAttribute("stroke", "rgba(232,236,255,.35)");
+      els.silhouetteGroup.setAttribute("stroke-width", "1.5");
+      els.silhouetteGroup.setAttribute("stroke-linejoin", "round");
+      els.silhouetteGroup.setAttribute("stroke-linecap", "round");
+
+      // 5) Fit transform (wait a frame so bbox is real)
+      const transformStr = await fitTransformForGroupAsync(els.silhouetteGroup, MAP_BOX);
+      els.silhouetteGroup.setAttribute("transform", transformStr);
+
+      if (isWorld) els.clipWorldGroup.setAttribute("transform", transformStr);
+      else els.clipUSGroup.setAttribute("transform", transformStr);
+
+      // Fill width uses the MAP_BOX width
+      currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+    }
+
 
       // IMPORTANT: compute a transform based on silhouette bbox, then apply SAME transform to clip group
       // We do this by setting transform on the clip group itself.
