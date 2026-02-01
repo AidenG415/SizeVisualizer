@@ -613,7 +613,8 @@
     // Auto zoom view for tiny fills (purely visual)
     // Auto zoom view for tiny fills (purely visual)
 // IMPORTANT: allow fillW === 0 for extremely tiny fractions
-const tinyAtThisScale = (frac > 0) && (fillW < MIN_VISIBLE_PX);
+const expectedPx = clamp(frac, 0, 1) * W;          // visibility based on fraction
+const tinyAtThisScale = (frac > 0) && (expectedPx < MIN_VISIBLE_PX);
 
 if (acres > 0 && tinyAtThisScale) {
   els.zoomWrap.style.display = "block";
