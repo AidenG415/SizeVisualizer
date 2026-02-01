@@ -269,314 +269,243 @@
   </div>
 
   <script>
-    // ====== CONFIG ======
-    const ACRES_PER_SQMI = 640;
+  // ====== CONFIG ======
+  const ACRES_PER_SQMI = 640;
 
-    // Approx land areas in acres (only for fraction math)
-    const TOTAL_ACRES = {
-      us: 2.27e9,
-      world: 36.8e9
-    };
+  // Approx land areas in acres (only for fraction math)
+  const TOTAL_ACRES = {
+    us: 2.27e9,
+    world: 36.8e9
+  };
 
-    // Where to place the map inside the SVG
-    const MAP_BOX = { x: 80, y: 115, w: 740, h: 340 };
+  // Where to place the map inside the SVG
+  const MAP_BOX = { x: 80, y: 115, w: 740, h: 340 };
 
-    // SVG files (must exist)
-    const MAP_FILES = {
-      us: "./assets/us.svg",
-      world: "./assets/world.svg"
-    };
+  // SVG files (must exist)
+  const MAP_FILES = {
+    us: "./assets/us.svg",
+    world: "./assets/world.svg"
+  };
 
-    // When highlight width is below this many px, show zoom view
-    const MIN_VISIBLE_PX = 8;
+  // When highlight width is below this many px, show zoom view
+  const MIN_VISIBLE_PX = 8;
 
-    // Max zoom factor for the zoom view bar
-    const MAX_ZOOM = 5000;
+  // Max zoom factor for the zoom view bar
+  const MAX_ZOOM = 5000;
 
-    // ====== ELEMENTS ======
-    const els = {
-      acres: document.getElementById('acres'),
-      mode: document.getElementById('mode'),
-      pct: document.getElementById('pct'),
-      sqmi: document.getElementById('sqmi'),
-      warn: document.getElementById('warn'),
-      exampleBtn: document.getElementById('exampleBtn'),
+  // ====== ELEMENTS ======
+  const els = {
+    acres: document.getElementById('acres'),
+    mode: document.getElementById('mode'),
+    pct: document.getElementById('pct'),
+    sqmi: document.getElementById('sqmi'),
+    warn: document.getElementById('warn'),
+    exampleBtn: document.getElementById('exampleBtn'),
 
-      silhouetteGroup: document.getElementById('silhouetteGroup'),
-      clipGroup: document.getElementById('clipGroup'),
-      fillRect: document.getElementById('fillRect'),
-      titleText: document.getElementById('titleText'),
+    silhouetteGroup: document.getElementById('silhouetteGroup'),
+    clipGroup: document.getElementById('clipGroup'),
+    fillRect: document.getElementById('fillRect'),
+    titleText: document.getElementById('titleText'),
 
-      clipUSGroup: document.getElementById('clipUSGroup'),
-      clipWorldGroup: document.getElementById('clipWorldGroup'),
+    clipUSGroup: document.getElementById('clipUSGroup'),
+    clipWorldGroup: document.getElementById('clipWorldGroup'),
 
-      zoomWrap: document.getElementById('zoomWrap'),
-      zoomBar: document.getElementById('zoomBar'),
-      zoomFactorText: document.getElementById('zoomFactorText'),
-      zoomNote: document.getElementById('zoomNote'),
-    };
+    zoomWrap: document.getElementById('zoomWrap'),
+    zoomBar: document.getElementById('zoomBar'),
+    zoomFactorText: document.getElementById('zoomFactorText'),
+    zoomNote: document.getElementById('zoomNote'),
+  };
 
-    let currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+  let currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
 
-    // ====== HELPERS ======
-    function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  // ====== HELPERS ======
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
 
-    function formatNumber(n){
-      if (!isFinite(n)) return "—";
-      return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  function formatNumber(n){
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function clearChildren(el){
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  // Clone SVG shape elements from an external SVG doc into a target <g>
+  function cloneShapesIntoGroup(svgDoc, targetGroup){
+    clearChildren(targetGroup);
+
+    const shapes = svgDoc.querySelectorAll("path, polygon, polyline, rect, circle, ellipse");
+    shapes.forEach(node => {
+      const clone = document.importNode(node, true);
+      targetGroup.appendChild(clone);
+    });
+
+    // If we accidentally grabbed nothing, throw early so you see the real error
+    if (!targetGroup.firstChild) {
+      throw new Error("No shapes found in SVG (expected path/polygon/etc).");
     }
+  }
 
-    function clearChildren(el){
-      while (el.firstChild) el.removeChild(el.firstChild);
-    }
-
-   
-
-       // ====== HELPERS ======
-    function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
-
-    function formatNumber(n){
-      if (!isFinite(n)) return "—";
-      return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-    }
-
-    function clearChildren(el){
-      while (el.firstChild) el.removeChild(el.firstChild);
-    }
-
-    // Clone SVG shape elements from an external SVG doc into a target <g>
-    function cloneShapesIntoGroup(svgDoc, targetGroup){
-      clearChildren(targetGroup);
-
-      // Grab common geometry elements (SimpleMaps uses <path> a lot)
-      const shapes = svgDoc.querySelectorAll("path, polygon, polyline, rect, circle, ellipse");
-
-      shapes.forEach(node => {
-        // Import node into THIS document so it becomes part of your page SVG
-        const clone = document.importNode(node, true);
-        targetGroup.appendChild(clone);
-      });
-    }
-
-    // Strip any inline fill rules so group-level fill / CSS can work
-    function stripInlineFills(groupEl){
-      const all = groupEl.querySelectorAll("*");
-      all.forEach(el => {
-        // Remove fill="..."
-        el.removeAttribute("fill");
-
-        // Remove style="...fill: ...;..."
-        const style = el.getAttribute("style") || "";
-        if (style) {
-          const cleaned = style.replace(/fill\s*:\s*[^;]+;?/gi, "");
-          if (cleaned !== style) el.setAttribute("style", cleaned);
-        }
-      });
-
-      // Also remove fill rules directly on the group (in case)
-      groupEl.removeAttribute("fill");
-      const gStyle = groupEl.getAttribute("style") || "";
-      if (gStyle) {
-        const cleaned = gStyle.replace(/fill\s*:\s*[^;]+;?/gi, "");
-        if (cleaned !== gStyle) groupEl.setAttribute("style", cleaned);
-      }
-    }
-
-    // Some browsers can give 0x0 bbox immediately after DOM changes.
-    // This waits a frame before measuring.
-    async function fitTransformForGroupAsync(groupEl, box){
-      await new Promise(requestAnimationFrame);
-      const bbox = groupEl.getBBox();
-
-      // Guard: avoid divide-by-zero
-      if (!bbox.width || !bbox.height) {
-        return `translate(${box.x}, ${box.y}) scale(1)`;
-      }
-
-      const scaleX = box.w / bbox.width;
-      const scaleY = box.h / bbox.height;
-      const scale = Math.min(scaleX, scaleY);
-
-      const newW = bbox.width * scale;
-      const newH = bbox.height * scale;
-
-      const tx = box.x + (box.w - newW)/2 - bbox.x * scale;
-      const ty = box.y + (box.h - newH)/2 - bbox.y * scale;
-
-      return `translate(${tx}, ${ty}) scale(${scale})`;
-    }
-
-
-    function fitTransformForGroup(groupEl, box){
-      // group must be in DOM
-      const bbox = groupEl.getBBox();
-
-      const scaleX = box.w / bbox.width;
-      const scaleY = box.h / bbox.height;
-      const scale = Math.min(scaleX, scaleY);
-
-      const newW = bbox.width * scale;
-      const newH = bbox.height * scale;
-
-      const tx = box.x + (box.w - newW)/2 - bbox.x * scale;
-      const ty = box.y + (box.h - newH)/2 - bbox.y * scale;
-
-      return `translate(${tx}, ${ty}) scale(${scale})`;
-    }
-
-    // ✅ Fix B helper: strips inline fill/style fills so our group fill & highlight show
-    function stripInlineFills(groupEl){
-      const paths = groupEl.querySelectorAll("path");
-      paths.forEach(p => {
-        // Remove inline fill embedded inside style="...fill:...".
-        const style = p.getAttribute("style") || "";
+  // Strip inline fill rules so group-level fill & clip work
+  function stripInlineFills(groupEl){
+    const all = groupEl.querySelectorAll("*");
+    all.forEach(el => {
+      el.removeAttribute("fill");
+      const style = el.getAttribute("style") || "";
+      if (style) {
         const cleaned = style.replace(/fill\s*:\s*[^;]+;?/gi, "");
-        if (cleaned !== style) p.setAttribute("style", cleaned);
+        if (cleaned !== style) el.setAttribute("style", cleaned);
+      }
+    });
 
-        // Also remove fill attribute if present
-        p.removeAttribute("fill");
-      });
+    // also remove fill on group itself
+    groupEl.removeAttribute("fill");
+    const gStyle = groupEl.getAttribute("style") || "";
+    if (gStyle) {
+      const cleaned = gStyle.replace(/fill\s*:\s*[^;]+;?/gi, "");
+      if (cleaned !== gStyle) groupEl.setAttribute("style", cleaned);
+    }
+  }
+
+  async function fitTransformForGroupAsync(groupEl, box){
+    await new Promise(requestAnimationFrame);
+
+    const bbox = groupEl.getBBox();
+    if (!bbox.width || !bbox.height) {
+      return `translate(${box.x}, ${box.y}) scale(1)`;
     }
 
-       async function loadMap(mode){
-      const url = MAP_FILES[mode];
-      const isWorld = mode === "world";
+    const scale = Math.min(box.w / bbox.width, box.h / bbox.height);
 
-      els.titleText.textContent = isWorld ? "World (land area)" : "United States (land area)";
+    const newW = bbox.width * scale;
+    const newH = bbox.height * scale;
 
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`Failed to load ${url} (HTTP ${res.status})`);
+    const tx = box.x + (box.w - newW)/2 - bbox.x * scale;
+    const ty = box.y + (box.h - newH)/2 - bbox.y * scale;
 
-      const text = (await res.text()).trim();
-      const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    return `translate(${tx}, ${ty}) scale(${scale})`;
+  }
 
-      // 1) Import shapes into silhouette (real nodes, preserves transforms if present)
-      cloneShapesIntoGroup(doc, els.silhouetteGroup);
+  async function loadMap(mode){
+    const url = MAP_FILES[mode];
+    const isWorld = mode === "world";
 
-      // 2) Import shapes into the matching clip group
-      if (isWorld) {
-        cloneShapesIntoGroup(doc, els.clipWorldGroup);
-        clearChildren(els.clipUSGroup);
-        els.clipGroup.setAttribute("clip-path", "url(#clipWorld)");
-      } else {
-        cloneShapesIntoGroup(doc, els.clipUSGroup);
-        clearChildren(els.clipWorldGroup);
-        els.clipGroup.setAttribute("clip-path", "url(#clipUS)");
-      }
+    els.titleText.textContent = isWorld ? "World (land area)" : "United States (land area)";
 
-      // 3) CRITICAL: remove inline fill rules from imported nodes
-      stripInlineFills(els.silhouetteGroup);
-      if (isWorld) stripInlineFills(els.clipWorldGroup);
-      else stripInlineFills(els.clipUSGroup);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to load ${url} (HTTP ${res.status})`);
 
-      // 4) Apply your desired base style on the silhouette group (now it will actually take)
-      els.silhouetteGroup.setAttribute("fill", "rgba(232,236,255,.12)");
-      els.silhouetteGroup.setAttribute("stroke", "rgba(232,236,255,.35)");
-      els.silhouetteGroup.setAttribute("stroke-width", "1.5");
-      els.silhouetteGroup.setAttribute("stroke-linejoin", "round");
-      els.silhouetteGroup.setAttribute("stroke-linecap", "round");
+    const text = (await res.text()).trim();
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
 
-      // 5) Fit transform (wait a frame so bbox is real)
-      const transformStr = await fitTransformForGroupAsync(els.silhouetteGroup, MAP_BOX);
-      els.silhouetteGroup.setAttribute("transform", transformStr);
+    // Import shapes into silhouette + clip
+    cloneShapesIntoGroup(doc, els.silhouetteGroup);
 
-      if (isWorld) els.clipWorldGroup.setAttribute("transform", transformStr);
-      else els.clipUSGroup.setAttribute("transform", transformStr);
-
-      // Fill width uses the MAP_BOX width
-      currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+    if (isWorld) {
+      cloneShapesIntoGroup(doc, els.clipWorldGroup);
+      clearChildren(els.clipUSGroup);
+      els.clipGroup.setAttribute("clip-path", "url(#clipWorld)");
+    } else {
+      cloneShapesIntoGroup(doc, els.clipUSGroup);
+      clearChildren(els.clipWorldGroup);
+      els.clipGroup.setAttribute("clip-path", "url(#clipUS)");
     }
 
+    // Kill inline fill rules from the imported SVG
+    stripInlineFills(els.silhouetteGroup);
+    if (isWorld) stripInlineFills(els.clipWorldGroup);
+    else stripInlineFills(els.clipUSGroup);
 
-      // IMPORTANT: compute a transform based on silhouette bbox, then apply SAME transform to clip group
-      // We do this by setting transform on the clip group itself.
-      const transformStr = fitTransformForGroup(els.silhouetteGroup, MAP_BOX);
-      els.silhouetteGroup.setAttribute("transform", transformStr);
+    // Force a visible base style on the silhouette
+    els.silhouetteGroup.setAttribute("fill", "rgba(232,236,255,.12)");
+    els.silhouetteGroup.setAttribute("stroke", "rgba(232,236,255,.35)");
+    els.silhouetteGroup.setAttribute("stroke-width", "1.5");
+    els.silhouetteGroup.setAttribute("stroke-linejoin", "round");
+    els.silhouetteGroup.setAttribute("stroke-linecap", "round");
 
-      if (isWorld) {
-        els.clipWorldGroup.setAttribute("transform", transformStr);
-      } else {
-        els.clipUSGroup.setAttribute("transform", transformStr);
-      }
+    // Fit + apply same transform to clip group
+    const transformStr = await fitTransformForGroupAsync(els.silhouetteGroup, MAP_BOX);
+    els.silhouetteGroup.setAttribute("transform", transformStr);
 
-      // Fill width uses the MAP_BOX width
-      currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+    if (isWorld) els.clipWorldGroup.setAttribute("transform", transformStr);
+    else els.clipUSGroup.setAttribute("transform", transformStr);
+
+    currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+  }
+
+  function update(){
+    const mode = els.mode.value;
+    let acres = Number(els.acres.value);
+    if (!isFinite(acres) || acres < 0) acres = 0;
+
+    const total = TOTAL_ACRES[mode];
+    const frac = (total > 0) ? acres / total : 0;
+    const pct = frac * 100;
+
+    const X0 = currentFit.x0;
+    const W = currentFit.x1 - currentFit.x0;
+
+    // Real-scale fill
+    const fillW = clamp(frac, 0, 1) * W;
+    els.fillRect.setAttribute("x", X0);
+    els.fillRect.setAttribute("width", fillW);
+
+    // Stats
+    els.pct.textContent = `${formatNumber(pct)}%`;
+    els.sqmi.textContent = formatNumber(acres / ACRES_PER_SQMI);
+
+    // Warnings
+    if (frac > 1) {
+      els.warn.textContent =
+        `That’s more than 100% of the selected land area — fully highlighted (over by ${formatNumber((frac - 1) * 100)}%).`;
+    } else {
+      els.warn.textContent = "";
     }
 
-    function update(){
-      const mode = els.mode.value;
-      let acres = Number(els.acres.value);
-      if (!isFinite(acres) || acres < 0) acres = 0;
+    // Auto zoom view for tiny fills
+    if (acres > 0 && fillW > 0 && fillW < MIN_VISIBLE_PX && frac > 0) {
+      els.zoomWrap.style.display = "block";
 
-      const total = TOTAL_ACRES[mode];
-      const frac = (total > 0) ? acres / total : 0;
-      const pct = frac * 100;
+      const targetFrac = 0.25;
+      let zoomFactor = targetFrac / frac;
+      zoomFactor = clamp(zoomFactor, 1, MAX_ZOOM);
 
-      const X0 = currentFit.x0;
-      const W = currentFit.x1 - currentFit.x0;
+      const zoomedFrac = clamp(frac * zoomFactor, 0, 1);
+      els.zoomBar.style.width = `${zoomedFrac * 100}%`;
+      els.zoomFactorText.textContent = `×${formatNumber(zoomFactor)} zoom`;
 
-      // Real-scale fill
-      const fillW = clamp(frac, 0, 1) * W;
-      els.fillRect.setAttribute("x", X0);
-      els.fillRect.setAttribute("width", fillW);
-
-      // Stats
-      els.pct.textContent = `${formatNumber(pct)}%`;
-      els.sqmi.textContent = formatNumber(acres / ACRES_PER_SQMI);
-
-      // Warnings
-      if (frac > 1) {
-        els.warn.textContent =
-          `That’s more than 100% of the selected land area — fully highlighted (over by ${formatNumber((frac - 1) * 100)}%).`;
-      } else {
-        els.warn.textContent = "";
-      }
-
-      // Auto zoom view for tiny fills
-      if (acres > 0 && fillW > 0 && fillW < MIN_VISIBLE_PX && frac > 0) {
-        els.zoomWrap.style.display = "block";
-
-        // choose a zoom factor so the zoomed bar is at least ~25% width (if possible)
-        const targetFrac = 0.25;
-        let zoomFactor = targetFrac / frac;
-        zoomFactor = clamp(zoomFactor, 1, MAX_ZOOM);
-
-        const zoomedFrac = clamp(frac * zoomFactor, 0, 1);
-        els.zoomBar.style.width = `${zoomedFrac * 100}%`;
-        els.zoomFactorText.textContent = `×${formatNumber(zoomFactor)} zoom`;
-
-        els.zoomNote.textContent =
-          `Real scale is ${formatNumber(pct)}%. Zoom View magnifies the fraction by ×${formatNumber(zoomFactor)} so it’s visible.`;
-      } else {
-        els.zoomWrap.style.display = "none";
-        els.zoomBar.style.width = "0%";
-      }
+      els.zoomNote.textContent =
+        `Real scale is ${formatNumber(pct)}%. Zoom View magnifies the fraction by ×${formatNumber(zoomFactor)} so it’s visible.`;
+    } else {
+      els.zoomWrap.style.display = "none";
+      els.zoomBar.style.width = "0%";
     }
+  }
 
-    async function init(){
+  async function init(){
+    await loadMap(els.mode.value);
+    update();
+
+    els.acres.addEventListener("input", update);
+
+    els.mode.addEventListener("change", async () => {
       await loadMap(els.mode.value);
       update();
-
-      els.acres.addEventListener("input", update);
-
-      els.mode.addEventListener("change", async () => {
-        await loadMap(els.mode.value);
-        update();
-      });
-
-      els.exampleBtn.addEventListener("click", () => {
-        els.acres.value = 1000000;
-        update();
-        els.acres.focus();
-        els.acres.select();
-      });
-    }
-
-    init().catch(err => {
-      console.error(err);
-      els.warn.textContent =
-        `Map load error. Make sure you added /assets/us.svg and /assets/world.svg. (${err.message})`;
     });
-  </script>
+
+    els.exampleBtn.addEventListener("click", () => {
+      els.acres.value = 1000000;
+      update();
+      els.acres.focus();
+      els.acres.select();
+    });
+  }
+
+  init().catch(err => {
+    console.error(err);
+    els.warn.textContent =
+      `Map load error. Make sure you added /assets/us.svg and /assets/world.svg. (${err.message})`;
+  });
+</script>
 </body>
 </html>
