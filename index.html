@@ -366,12 +366,18 @@
       return `translate(${tx}, ${ty}) scale(${scale})`;
     }
 
-    function applyFitTransform(transformStr){
-      // Apply to BOTH silhouette and the active clip group so the clip matches.
-      els.silhouetteGroup.setAttribute("transform", transformStr);
+    // ✅ Fix B helper: strips inline fill/style fills so our group fill & highlight show
+    function stripInlineFills(groupEl){
+      const paths = groupEl.querySelectorAll("path");
+      paths.forEach(p => {
+        // Remove inline fill embedded inside style="...fill:...".
+        const style = p.getAttribute("style") || "";
+        const cleaned = style.replace(/fill\s*:\s*[^;]+;?/gi, "");
+        if (cleaned !== style) p.setAttribute("style", cleaned);
 
-      // also update the currentFit for fill width
-      currentFit = { x0: MAP_BOX.x, x1: MAP_BOX.x + MAP_BOX.w };
+        // Also remove fill attribute if present
+        p.removeAttribute("fill");
+      });
     }
 
     async function loadMap(mode){
@@ -392,15 +398,24 @@
       // Populate silhouette paths
       setPaths(els.silhouetteGroup, pathsD);
 
+      // ✅ FIX B: remove per-path fills so the group fill + clip highlight actually render
+      stripInlineFills(els.silhouetteGroup);
+
       // Populate BOTH clip groups (keeps switching instant later)
       // (You can optimize to only set the active one, but this is fine.)
       if (isWorld) {
         setPaths(els.clipWorldGroup, pathsD);
+        // ✅ FIX B: strip inline fills in clip paths too (some SVGs include style fills)
+        stripInlineFills(els.clipWorldGroup);
+
         // Clear other clip group so it doesn't hang onto old shapes
         clearChildren(els.clipUSGroup);
         els.clipGroup.setAttribute("clip-path", "url(#clipWorld)");
       } else {
         setPaths(els.clipUSGroup, pathsD);
+        // ✅ FIX B: strip inline fills in clip paths too
+        stripInlineFills(els.clipUSGroup);
+
         clearChildren(els.clipWorldGroup);
         els.clipGroup.setAttribute("clip-path", "url(#clipUS)");
       }
