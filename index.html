@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>How Big Is This? Acres Visualizer</title>
+  <meta name="description" content="Enter acres and see how big it is as a highlighted portion of the US or world map." />
+
+  <style>
+    :root{
+      --bg:#0b1020;
+      --card:#121a33;
+      --text:#e8ecff;
+      --muted:#aab3da;
+      --line:rgba(255,255,255,.12);
+      --accent:#7c5cff;
+      --accent2:#00d4ff;
+      --warn:#ffb020;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1100px 600px at 20% 0%, rgba(124,92,255,.22), transparent 60%),
+                  radial-gradient(900px 500px at 90% 10%, rgba(0,212,255,.18), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+    }
+    .wrap{
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 22px 16px 40px;
+    }
+    h1{font-size: clamp(22px, 3.2vw, 34px); margin: 10px 0 6px;}
+    p{margin:0 0 14px; color:var(--muted); line-height:1.45}
+    .card{
+      background: linear-gradient(180deg, rgba(18,26,51,.95), rgba(18,26,51,.75));
+      border:1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.30);
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 14px;
+      align-items:start;
+    }
+    @media (max-width: 860px){
+      .grid{grid-template-columns: 1fr;}
+    }
+    .row{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:end;
+    }
+    label{display:block; font-size:12px; color:var(--muted); margin:0 0 6px;}
+    input, select{
+      width: 260px;
+      max-width: 100%;
+      padding: 11px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,48,.95);
+      color: var(--text);
+      outline: none;
+    }
+    input:focus, select:focus{
+      border-color: rgba(124,92,255,.7);
+      box-shadow: 0 0 0 4px rgba(124,92,255,.18);
+    }
+    .btn{
+      padding: 11px 14px;
+      border-radius: 12px;
+      border:1px solid rgba(124,92,255,.55);
+      background: rgba(124,92,255,.18);
+      color: var(--text);
+      cursor: pointer;
+      user-select:none;
+    }
+    .btn:hover{background: rgba(124,92,255,.26);}
+    .hint{font-size:12px; color:var(--muted); margin-top:8px;}
+    .stats{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .stat{
+      border:1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(15,23,48,.55);
+    }
+    .stat .k{font-size:12px; color:var(--muted);}
+    .stat .v{font-size:18px; margin-top:4px;}
+    .warn{
+      color: var(--warn);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    /* SVG styling */
+    .viz{
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(15,23,48,.45);
+      padding: 12px;
+    }
+    .legend{
+      display:flex; gap:10px; flex-wrap:wrap;
+      margin-top:10px; color:var(--muted); font-size:12px;
+      align-items:center;
+    }
+    .dot{
+      width:10px;height:10px;border-radius:999px; display:inline-block; margin-right:6px;
+      border:1px solid rgba(255,255,255,.25);
+    }
+    .dot.fill{background: rgba(0,212,255,.75);}
+    .dot.base{background: rgba(232,236,255,.12);}
+    .footer{margin-top:14px; font-size:12px; color:var(--muted);}
+    a{color:var(--accent2); text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Acres Visualizer (US / World)</h1>
+    <p>Enter an area in acres and see it highlighted as a portion of the US or world land area. (No AI. Just math + visuals.)</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="row">
+          <div>
+            <label for="acres">Acres</label>
+            <input id="acres" type="number" min="0" step="1" value="1000000" />
+          </div>
+
+          <div>
+            <label for="mode">Compare to</label>
+            <select id="mode">
+              <option value="us">United States (land area)</option>
+              <option value="world">World (land area)</option>
+            </select>
+          </div>
+
+          <button class="btn" id="exampleBtn" type="button">Try “1,000,000”</button>
+        </div>
+
+        <div class="hint">
+          Tip: This is a <b>percentage highlight</b> inside a map silhouette. It’s meant to make big numbers feel real.
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="k">Percent of selected land area</div>
+            <div class="v" id="pct">—</div>
+          </div>
+          <div class="stat">
+            <div class="k">Equivalent square miles</div>
+            <div class="v" id="sqmi">—</div>
+          </div>
+        </div>
+
+        <div class="warn" id="warn"></div>
+
+        <div class="footer">
+          Want it to feel even more “real”? Next upgrade is adding <b>zoom steps</b> and comparisons (football fields, Manhattan, etc.).
+        </div>
+      </div>
+
+      <div class="viz">
+        <!-- SVG maps: we clip a left-to-right fill rectangle inside an outline -->
+        <svg id="svg" viewBox="0 0 900 520" width="100%" height="auto" role="img" aria-label="Map highlight visualization">
+          <defs>
+            <!-- US outline (simplified silhouette path) -->
+            <clipPath id="clipUS">
+              <!-- This is a stylized outline, not a precise cartographic boundary -->
+              <path id="pathUS" d="M90,220
+                C120,160 190,140 240,155
+                C275,120 335,110 385,135
+                C430,110 490,110 530,145
+                C590,120 660,140 700,185
+                C760,215 785,260 770,300
+                C745,350 690,375 640,365
+                C600,405 535,410 485,390
+                C435,420 360,410 320,375
+                C250,390 175,365 140,320
+                C105,285 75,255 90,220 Z"/>
+            </clipPath>
+
+            <!-- World outline (very simplified “blob” silhouette) -->
+            <clipPath id="clipWorld">
+              <path id="pathWorld" d="M85,260
+                C95,170 170,130 245,150
+                C300,90 385,95 440,150
+                C510,115 610,125 670,175
+                C755,185 815,240 805,305
+                C790,395 685,420 600,390
+                C535,455 410,455 345,395
+                C265,430 150,395 110,325
+                C95,305 82,285 85,260 Z"/>
+            </clipPath>
+          </defs>
+
+          <!-- Background base (unfilled area) -->
+          <rect x="0" y="0" width="900" height="520" fill="rgba(232,236,255,.06)"></rect>
+
+          <!-- Base map area (light) -->
+          <g id="baseGroup">
+            <rect x="60" y="100" width="780" height="320" rx="26" fill="rgba(232,236,255,.06)"></rect>
+          </g>
+
+          <!-- Filled portion (clipped to chosen silhouette) -->
+          <g id="mapGroup">
+            <!-- base silhouette -->
+            <path id="silhouette" fill="rgba(232,236,255,.12)" stroke="rgba(232,236,255,.35)" stroke-width="2"></path>
+
+            <!-- fill rect clipped into the silhouette -->
+            <g id="clipGroup">
+              <rect id="fillRect" x="0" y="0" width="0" height="520" fill="rgba(0,212,255,.75)"></rect>
+            </g>
+          </g>
+
+          <!-- Label -->
+          <text x="70" y="70" fill="rgba(232,236,255,.75)" font-size="20" font-weight="600" id="titleText">
+            United States (land area)
+          </text>
+          <text x="70" y="95" fill="rgba(170,179,218,.95)" font-size="13" id="subText">
+            Highlight grows left → right based on acres entered
+          </text>
+        </svg>
+
+        <div class="legend">
+          <span><span class="dot base"></span>Unhighlighted</span>
+          <span><span class="dot fill"></span>Highlighted</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Approx constants (good enough for visualization; you can refine later):
+    // 1 square mile = 640 acres
+    const ACRES_PER_SQMI = 640;
+
+    // Approx land areas in acres (used only to compute percentage fill):
+    // US land area ~ 2.27 billion acres (approx)
+    // World land area ~ 36.8 billion acres (approx)
+    const TOTAL_ACRES = {
+      us: 2.27e9,
+      world: 36.8e9
+    };
+
+    const els = {
+      acres: document.getElementById('acres'),
+      mode: document.getElementById('mode'),
+      pct: document.getElementById('pct'),
+      sqmi: document.getElementById('sqmi'),
+      warn: document.getElementById('warn'),
+      exampleBtn: document.getElementById('exampleBtn'),
+
+      svg: document.getElementById('svg'),
+      silhouette: document.getElementById('silhouette'),
+      clipGroup: document.getElementById('clipGroup'),
+      fillRect: document.getElementById('fillRect'),
+      titleText: document.getElementById('titleText'),
+    };
+
+    function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+    function formatNumber(n){
+      if (!isFinite(n)) return "—";
+      return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function setMode(mode){
+      // Swap silhouette path + clipPath
+      const usPath = document.getElementById('pathUS').getAttribute('d');
+      const worldPath = document.getElementById('pathWorld').getAttribute('d');
+
+      if (mode === 'world') {
+        els.silhouette.setAttribute('d', worldPath);
+        els.clipGroup.setAttribute('clip-path', 'url(#clipWorld)');
+        els.titleText.textContent = "World (land area)";
+      } else {
+        els.silhouette.setAttribute('d', usPath);
+        els.clipGroup.setAttribute('clip-path', 'url(#clipUS)');
+        els.titleText.textContent = "United States (land area)";
+      }
+    }
+
+    function update(){
+      const mode = els.mode.value;
+      let acres = Number(els.acres.value);
+
+      if (!isFinite(acres) || acres < 0) acres = 0;
+
+      const total = TOTAL_ACRES[mode];
+      const frac = (total > 0) ? acres / total : 0;
+      const pct = frac * 100;
+
+      // For the fill rectangle: we fill across the whole SVG width, clipped into the silhouette.
+      // The silhouette roughly spans x≈90..770, so use a nice padding bounds:
+      const X0 = 60;
+      const X1 = 840;
+      const W = X1 - X0;
+      const fillW = clamp(frac, 0, 1) * W;
+
+      els.fillRect.setAttribute('x', X0);
+      els.fillRect.setAttribute('width', fillW);
+
+      els.pct.textContent = `${formatNumber(pct)}%`;
+      els.sqmi.textContent = formatNumber(acres / ACRES_PER_SQMI);
+
+      // Warnings/notes
+      if (frac > 1) {
+        els.warn.textContent = `That’s more than 100% of the selected land area — the map is fully highlighted (and you’re over by ${formatNumber((frac - 1) * 100)}%).`;
+      } else if (acres === 0) {
+        els.warn.textContent = "";
+      } else if (pct < 0.0001) {
+        els.warn.textContent = "So small relative to the selected land area that it barely registers — try a bigger number or add a zoom mode later.";
+      } else {
+        els.warn.textContent = "";
+      }
+    }
+
+    // Init
+    setMode(els.mode.value);
+    update();
+
+    // Events
+    els.acres.addEventListener('input', update);
+    els.mode.addEventListener('change', () => { setMode(els.mode.value); update(); });
+
+    els.exampleBtn.addEventListener('click', () => {
+      els.acres.value = 1000000;
+      update();
+      els.acres.focus();
+      els.acres.select();
+    });
+  </script>
+</body>
+</html>
