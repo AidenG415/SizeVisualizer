@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 220">
-  <g transform="rotate(90 70 110)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140">
+  <!-- rotate 90° clockwise, then shift into view -->
+  <g transform="translate(220 0) rotate(90)">
     <path
       d="
         M30 10
