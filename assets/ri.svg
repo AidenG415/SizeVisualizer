@@ -1,33 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 220">
-  <path
-    d="
-      M30 10
-      L110 10
-      L110 60
-      L98 68
-      L110 78
-      L110 155
-      L90 155
-      L85 145
-      L78 142
-      L72 145
-      L66 142
-      L60 145
-      L54 142
-      L48 145
-      L42 142
-      L38 145
-      L34 140
-      L30 145
-      L30 120
-      L26 110
-      L30 95
-      Z
-    "
-    fill="none"
-    stroke="black"
-    stroke-width="4"
-    stroke-linejoin="round"
-    stroke-linecap="round"
-  />
+  <g transform="rotate(90 70 110)">
+    <path
+      d="
+        M30 10
+        L110 10
+        L110 60
+        L98 68
+        L110 78
+        L110 155
+        L90 155
+        L85 145
+        L78 142
+        L72 145
+        L66 142
+        L60 145
+        L54 142
+        L48 145
+        L42 142
+        L38 145
+        L34 140
+        L30 145
+        L30 120
+        L26 110
+        L30 95
+        Z
+      "
+      fill="none"
+      stroke="black"
+      stroke-width="4"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+  </g>
 </svg>
